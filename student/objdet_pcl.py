@@ -29,10 +29,29 @@ from tools.waymo_reader.simple_waymo_open_dataset_reader import dataset_pb2, lab
 # object detection tools and helper functions
 import misc.objdet_tools as tools
 
+import zlib
+import open3d as o3d
+
+FRAME_SKIPPED = False
+VISUALIZER = None
+
+def load_frame_based_on_lidar_name(frame, lidar_name):
+    for ith_image_in_frame in frame.lasers:
+        if lidar_name == ith_image_in_frame.name:
+            return ith_image_in_frame
+
+def key_callback_destroy(visualizer):
+    visualizer.destroy_window()
+    exit()
+
+def key_callback_skip(visualizer):
+    global FRAME_SKIPPED
+    FRAME_SKIPPED = True
+    visualizer.close()
 
 # visualize lidar point-cloud
 def show_pcl(pcl):
-
+    global VISUALIZER, FRAME_SKIPPED
     ####### ID_S1_EX2 START #######     
     #######
     print("student task ID_S1_EX2")
@@ -42,14 +61,48 @@ def show_pcl(pcl):
     # step 2 : create instance of open3d point-cloud class
 
     # step 3 : set points in pcd instance by converting the point-cloud into 3d vectors (using open3d function Vector3dVector)
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(pcl[:, :3])
+    if not FRAME_SKIPPED:
+        VISUALIZER = o3d.visualization.VisualizerWithKeyCallback()
+        VISUALIZER.register_key_callback(113, key_callback_destroy)
+        VISUALIZER.register_key_callback(262, key_callback_skip)
+        VISUALIZER.create_window()
+        VISUALIZER.add_geometry(point_cloud)
+    else:
+        VISUALIZER.update_geometry(point_cloud)
+        FRAME_SKIPPED = False
 
     # step 4 : for the first frame, add the pcd instance to visualization using add_geometry; for all other frames, use update_geometry instead
     
+    VISUALIZER.poll_events()
+    VISUALIZER.run()
     # step 5 : visualize point cloud and keep window open until right-arrow is pressed (key-code 262)
 
     #######
     ####### ID_S1_EX2 END #######     
-       
+
+def preprocess_range_scale_of_lidar_data(lidar_data):
+    print(np.min(lidar_data))
+    lidar_data[lidar_data<0]=0
+    print(np.max(lidar_data))
+    print(lidar_data[lidar_data!=0])
+
+def map_range_image_to_8_bit(range_image):
+    range_image[range_image<0]=0
+    minimum_value = np.min(range_image)
+    maximum_value = np.max(range_image)
+    normalized_range_image = (range_image-minimum_value)/(maximum_value-minimum_value)
+    bit_8_range_image = (normalized_range_image*255).astype(np.uint8)
+    return bit_8_range_image
+
+def map_intensity_image_to_8_bit(intensity_image):
+    intensity_image[intensity_image<0]=0
+    first_percentile = np.percentile(intensity_image, 1)
+    last_percentile = np.percentile(intensity_image, 99)
+    intensity_image_scaled = (intensity_image-first_percentile)/(last_percentile-first_percentile)
+    bit_8_intensity_image = (intensity_image_scaled*255).astype(np.uint8)
+    return bit_8_intensity_image
 
 # visualize range image
 def show_range_image(frame, lidar_name):
@@ -59,18 +112,27 @@ def show_range_image(frame, lidar_name):
     print("student task ID_S1_EX1")
 
     # step 1 : extract lidar data and range image for the roof-mounted lidar
-    
+    loaded_frame = load_frame_based_on_lidar_name(frame, lidar_name)
+    loaded_range_image = loaded_frame.ri_return1.range_image_compressed
+    ri = dataset_pb2.MatrixFloat()
+    ri.ParseFromString(zlib.decompress(loaded_range_image))
+    reshaped_decoded_image = np.array(ri.data).reshape(ri.shape.dims)
+    range_image = reshaped_decoded_image[:, :, 0]
+    intensity_image = reshaped_decoded_image[:, :, 1]
+    bit_8_range_image = map_range_image_to_8_bit(range_image)
+    bit_8_intensity_image = map_intensity_image_to_8_bit(intensity_image)
+    img_range_intensity = np.concatenate((bit_8_range_image, bit_8_intensity_image), axis=0)
     # step 2 : extract the range and the intensity channel from the range image
     
     # step 3 : set values <0 to zero
     
-    # step 4 : map the range channel onto an 8-bit scale and make sure that the full range of values is appropriately considered
+    # step 4 : map the range channel onto n 8-bit scale and make sure that the full range of values is appropriately considered
     
     # step 5 : map the intensity channel onto an 8-bit scale and normalize with the difference between the 1- and 99-percentile to mitigate the influence of outliers
-    
+
     # step 6 : stack the range and intensity image vertically using np.vstack and convert the result to an unsigned 8-bit integer
     
-    img_range_intensity = [] # remove after implementing all steps
+    #img_range_intensity = [] # remove after implementing all steps
     #######
     ####### ID_S1_EX1 END #######     
     
