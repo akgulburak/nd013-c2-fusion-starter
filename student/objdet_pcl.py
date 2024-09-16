@@ -147,7 +147,6 @@ def bev_from_pcl(lidar_pcl, configs):
                     (lidar_pcl[:, 1] >= configs.lim_y[0]) & (lidar_pcl[:, 1] <= configs.lim_y[1]) &
                     (lidar_pcl[:, 2] >= configs.lim_z[0]) & (lidar_pcl[:, 2] <= configs.lim_z[1]))
     lidar_pcl = lidar_pcl[mask]
-    
     # shift level of ground plane to avoid flipping from 0 to 255 for neighboring pixels
     lidar_pcl[:, 2] = lidar_pcl[:, 2] - configs.lim_z[0]  
 
@@ -157,13 +156,21 @@ def bev_from_pcl(lidar_pcl, configs):
     print("student task ID_S2_EX1")
 
     ## step 1 :  compute bev-map discretization by dividing x-range by the bev-image height (see configs)
-
+    x_range = configs.lim_x[1] - configs.lim_x[0]
+    x_discretize_multiplier = x_range / configs.bev_width
     ## step 2 : create a copy of the lidar pcl and transform all metrix x-coordinates into bev-image coordinates    
-
+    backup_lidar_pcl = lidar_pcl.copy()
+    x_coordinates = backup_lidar_pcl[:, 0]
+    transformed_x_coordinates = x_coordinates / x_discretize_multiplier
     # step 3 : perform the same operation as in step 2 for the y-coordinates but make sure that no negative bev-coordinates occur
+    y_range = configs.lim_y[1] - configs.lim_y[0]
+    y_discretize_multiplier = y_range / configs.bev_width
+    y_coordinates = backup_lidar_pcl[:, 1]
+    transformed_y_coordinates = y_coordinates / y_discretize_multiplier
 
     # step 4 : visualize point-cloud using the function show_pcl from a previous task
-    
+    transformed_coordinates = np.stack([transformed_x_coordinates, transformed_y_coordinates, lidar_pcl[:, 2]], axis=1)
+    show_pcl(transformed_coordinates)
     #######
     ####### ID_S2_EX1 END #######     
     
