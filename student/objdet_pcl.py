@@ -148,10 +148,10 @@ def bev_from_pcl(lidar_pcl, configs):
                     (lidar_pcl[:, 2] >= configs.lim_z[0]) & (lidar_pcl[:, 2] <= configs.lim_z[1]))
     lidar_pcl = lidar_pcl[mask]
     # shift level of ground plane to avoid flipping from 0 to 255 for neighboring pixels
-    lidar_pcl[:, 2] = lidar_pcl[:, 2] - configs.lim_z[0]  
+    lidar_pcl[:, 2] = lidar_pcl[:, 2] - configs.lim_z[0]
 
     # convert sensor coordinates to bev-map coordinates (center is bottom-middle)
-    ####### ID_S2_EX1 START #######     
+    ####### ID_S2_EX1 START #######
     #######
     print("student task ID_S2_EX1")
 
@@ -159,18 +159,18 @@ def bev_from_pcl(lidar_pcl, configs):
     x_range = configs.lim_x[1] - configs.lim_x[0]
     x_discretize_multiplier = x_range / configs.bev_width
     ## step 2 : create a copy of the lidar pcl and transform all metrix x-coordinates into bev-image coordinates    
-    backup_lidar_pcl = lidar_pcl.copy()
-    x_coordinates = backup_lidar_pcl[:, 0]
+    lidar_pcl_cpy = lidar_pcl.copy()
+    x_coordinates = lidar_pcl_cpy[:, 0]
     transformed_x_coordinates = x_coordinates / x_discretize_multiplier
     # step 3 : perform the same operation as in step 2 for the y-coordinates but make sure that no negative bev-coordinates occur
     y_range = configs.lim_y[1] - configs.lim_y[0]
     y_discretize_multiplier = y_range / configs.bev_width
-    y_coordinates = backup_lidar_pcl[:, 1]
+    y_coordinates = lidar_pcl_cpy[:, 1] - lidar_pcl_cpy[:, 1].min()
     transformed_y_coordinates = y_coordinates / y_discretize_multiplier
 
     # step 4 : visualize point-cloud using the function show_pcl from a previous task
     transformed_coordinates = np.stack([transformed_x_coordinates, transformed_y_coordinates, lidar_pcl[:, 2]], axis=1)
-    show_pcl(transformed_coordinates)
+    #show_pcl(transformed_coordinates)
     #######
     ####### ID_S2_EX1 END #######     
     
@@ -181,18 +181,28 @@ def bev_from_pcl(lidar_pcl, configs):
     print("student task ID_S2_EX2")
 
     ## step 1 : create a numpy array filled with zeros which has the same dimensions as the BEV map
-
+    bev_map_zeros = np.zeros_like(lidar_pcl_cpy)
+    bev_map_zeros[:, :2] = lidar_pcl_cpy[:, :2]
     # step 2 : re-arrange elements in lidar_pcl_cpy by sorting first by x, then y, then -z (use numpy.lexsort)
-
+    sorted_indices = np.lexsort((lidar_pcl_cpy[:, 0], lidar_pcl_cpy[:, 1], -lidar_pcl_cpy[:, 2]))
+    sorted_lidar = lidar_pcl_cpy[sorted_indices]
     ## step 3 : extract all points with identical x and y such that only the top-most z-coordinate is kept (use numpy.unique)
     ##          also, store the number of points per x,y-cell in a variable named "counts" for use in the next task
-
+    unique_elements, unique_indices, counts_indices = np.unique(sorted_lidar[:, 2], axis=0, return_inverse=True, return_counts=True)
+    counts = unique_elements[unique_indices]
     ## step 4 : assign the intensity value of each unique entry in lidar_top_pcl to the intensity map 
     ##          make sure that the intensity is scaled in such a way that objects of interest (e.g. vehicles) are clearly visible    
     ##          also, make sure that the influence of outliers is mitigated by normalizing intensity on the difference between the max. and min. value within the point cloud
-
+    bev_map_zeros[unique_indices, 3] = counts
+    first_percentile = np.percentile(bev_map_zeros, 1)
+    last_percentile = np.percentile(bev_map_zeros, 99)
+    bev_map_zeros[unique_indices, 3] = np.clip(bev_map_zeros[unique_indices, 3], first_percentile, last_percentile)
+    bev_map_zeros[unique_indices, 3] = (bev_map_zeros[unique_indices, 3] - bev_map_zeros[unique_indices, 3].min()) / (bev_map_zeros[unique_indices, 3].max() - bev_map_zeros[unique_indices, 3].min())
     ## step 5 : temporarily visualize the intensity map using OpenCV to make sure that vehicles separate well from the background
-
+    intensity_map = np.zeros((configs.bev_height, configs.bev_width))
+    intensity_map[np.int_(transformed_x_coordinates), np.int_(transformed_y_coordinates)] = bev_map_zeros[unique_indices, 3]
+    cv2.imwrite("intensity_map.png", intensity_map*255)
+    #show_pcl(bev_map_zeros)
     #######
     ####### ID_S2_EX2 END ####### 
 
