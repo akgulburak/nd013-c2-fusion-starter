@@ -170,7 +170,7 @@ def bev_from_pcl(lidar_pcl, configs):
 
     # step 4 : visualize point-cloud using the function show_pcl from a previous task
     transformed_coordinates = np.stack([transformed_x_coordinates, transformed_y_coordinates, lidar_pcl[:, 2]], axis=1)
-    #show_pcl(transformed_coordinates)
+    show_pcl(transformed_coordinates)
     #######
     ####### ID_S2_EX1 END #######     
     
@@ -213,13 +213,22 @@ def bev_from_pcl(lidar_pcl, configs):
     print("student task ID_S2_EX3")
 
     ## step 1 : create a numpy array filled with zeros which has the same dimensions as the BEV map
+    height_map_zeros = np.zeros_like(lidar_pcl_cpy)
 
     ## step 2 : assign the height value of each unique entry in lidar_top_pcl to the height map 
     ##          make sure that each entry is normalized on the difference between the upper and lower height defined in the config file
     ##          use the lidar_pcl_top data structure from the previous task to access the pixels of the height_map
+    all_height_values = lidar_pcl_cpy[:, 1]
+    selected_height_values = all_height_values[unique_indices]
+    lowest_height_value = selected_height_values.min()
+    highest_height_value = selected_height_values.max()
+    normalized_height_values = ((selected_height_values - lowest_height_value) / (highest_height_value - lowest_height_value))
 
+    height_map = np.zeros((configs.bev_height, configs.bev_width))
+    height_map[np.int_(transformed_x_coordinates), np.int_(transformed_y_coordinates)] = normalized_height_values
     ## step 3 : temporarily visualize the intensity map using OpenCV to make sure that vehicles separate well from the background
-
+    cv2.imwrite("height_map.png", height_map*255)
+    
     #######
     ####### ID_S2_EX3 END #######       
 
