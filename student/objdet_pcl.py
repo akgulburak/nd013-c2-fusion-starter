@@ -213,7 +213,7 @@ def bev_from_pcl(lidar_pcl, configs):
     print("student task ID_S2_EX3")
 
     ## step 1 : create a numpy array filled with zeros which has the same dimensions as the BEV map
-    height_map_zeros = np.zeros_like(lidar_pcl_cpy)
+    lidar_pcl_top = np.zeros_like(lidar_pcl_cpy)
 
     ## step 2 : assign the height value of each unique entry in lidar_top_pcl to the height map 
     ##          make sure that each entry is normalized on the difference between the upper and lower height defined in the config file
@@ -222,10 +222,10 @@ def bev_from_pcl(lidar_pcl, configs):
     selected_height_values = all_height_values[unique_indices]
     lowest_height_value = selected_height_values.min()
     highest_height_value = selected_height_values.max()
-    normalized_height_values = ((selected_height_values - lowest_height_value) / (highest_height_value - lowest_height_value))
+    lidar_pcl_top[:, 2] = ((selected_height_values - lowest_height_value) / (highest_height_value - lowest_height_value)) * highest_height_value
 
     height_map = np.zeros((configs.bev_height, configs.bev_width))
-    height_map[np.int_(transformed_x_coordinates), np.int_(transformed_y_coordinates)] = normalized_height_values
+    height_map[np.int_(transformed_x_coordinates), np.int_(transformed_y_coordinates)] = lidar_pcl_top[:, 2]
     ## step 3 : temporarily visualize the intensity map using OpenCV to make sure that vehicles separate well from the background
     cv2.imwrite("height_map.png", height_map*255)
     
@@ -233,10 +233,10 @@ def bev_from_pcl(lidar_pcl, configs):
     ####### ID_S2_EX3 END #######       
 
     # TODO remove after implementing all of the above steps
-    lidar_pcl_cpy = []
-    lidar_pcl_top = []
-    height_map = []
-    intensity_map = []
+    #lidar_pcl_cpy = []
+    #lidar_pcl_top = []
+    #height_map = []
+    #intensity_map = []
 
     # Compute density layer of the BEV map
     density_map = np.zeros((configs.bev_height + 1, configs.bev_width + 1))
@@ -258,5 +258,4 @@ def bev_from_pcl(lidar_pcl, configs):
     bev_maps = torch.from_numpy(bev_maps)  # create tensor from birds-eye view
     input_bev_maps = bev_maps.to(configs.device, non_blocking=True).float()
     return input_bev_maps
-
 
