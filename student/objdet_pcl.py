@@ -32,7 +32,6 @@ import misc.objdet_tools as tools
 import zlib
 import open3d as o3d
 
-FRAME_SKIPPED = False
 VISUALIZER = None
 
 def load_frame_based_on_lidar_name(frame, lidar_name):
@@ -63,20 +62,23 @@ def show_pcl(pcl):
     # step 3 : set points in pcd instance by converting the point-cloud into 3d vectors (using open3d function Vector3dVector)
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(pcl[:, :3])
-    if not FRAME_SKIPPED:
-        VISUALIZER = o3d.visualization.VisualizerWithKeyCallback()
-        VISUALIZER.register_key_callback(113, key_callback_destroy)
-        VISUALIZER.register_key_callback(262, key_callback_skip)
-        VISUALIZER.create_window()
-        VISUALIZER.add_geometry(point_cloud)
-    else:
-        VISUALIZER.update_geometry(point_cloud)
-        FRAME_SKIPPED = False
-
+    #if not FRAME_SKIPPED:
+    FRAME_SKIPPED = False
+    VISUALIZER = o3d.visualization.VisualizerWithKeyCallback()
+    VISUALIZER.register_key_callback(113, key_callback_destroy)
+    VISUALIZER.register_key_callback(262, key_callback_skip)
+    VISUALIZER.create_window()
+    VISUALIZER.add_geometry(point_cloud)
+    #FRAME_SKIPPED = True
+    #else:
+    while not FRAME_SKIPPED:
+        VISUALIZER.poll_events()
+        VISUALIZER.update_renderer()
+        #VISUALIZER.update_geometry(point_cloud)
+        #FRAME_SKIPPED = False
+    VISUALIZER.destroy_window()
     # step 4 : for the first frame, add the pcd instance to visualization using add_geometry; for all other frames, use update_geometry instead
     
-    VISUALIZER.poll_events()
-    VISUALIZER.run()
     # step 5 : visualize point cloud and keep window open until right-arrow is pressed (key-code 262)
 
     #######
@@ -138,7 +140,15 @@ def show_range_image(frame, lidar_name):
     
     return img_range_intensity
 
-
+def extract_from_identical_x_y(sorted_lidar, identical_x_y):
+    unique_indices = []
+    x_y_z_lidar = sorted_lidar[:, :3]
+    for identical_coordinate in identical_x_y:
+        identical_coordinates = sorted_lidar[(sorted_lidar[:, 0]==identical_coordinate[0]) & (sorted_lidar[:, 1]==identical_coordinate[1])]
+        top_most_z = identical_coordinates[0, 2]
+        unique_indice = x_y_z_lidar[x_y_z_lidar==np.array([identical_coordinates[0][0], identical_coordinates[0][1], top_most_z])]
+        unique_indices.append(unique_indice)
+    return unique_indices
 # create birds-eye view of lidar data
 def bev_from_pcl(lidar_pcl, configs):
 
@@ -147,17 +157,23 @@ def bev_from_pcl(lidar_pcl, configs):
                     (lidar_pcl[:, 1] >= configs.lim_y[0]) & (lidar_pcl[:, 1] <= configs.lim_y[1]) &
                     (lidar_pcl[:, 2] >= configs.lim_z[0]) & (lidar_pcl[:, 2] <= configs.lim_z[1]))
     lidar_pcl = lidar_pcl[mask]
+    high_reflectivity_indices = lidar_pcl[:, 3]>=0.0
+    lidar_pcl = lidar_pcl[high_reflectivity_indices]
     # shift level of ground plane to avoid flipping from 0 to 255 for neighboring pixels
+    #print(lidar_pcl[:, 3].max())
+    #print(lidar_pcl[:, 3].min())
     lidar_pcl[:, 2] = lidar_pcl[:, 2] - configs.lim_z[0]
+#    lidar_pcl[:, 3] = lidar_pcl[:, 3] + 10
 
     # convert sensor coordinates to bev-map coordinates (center is bottom-middle)
+    #lidar_pcl[:, 1] = lidar_pcl[:, 1] - (configs.lim_y[1]-configs.lim_y[0])/2
     ####### ID_S2_EX1 START #######
     #######
     print("student task ID_S2_EX1")
-
+    print(configs)
     ## step 1 :  compute bev-map discretization by dividing x-range by the bev-image height (see configs)
     x_range = configs.lim_x[1] - configs.lim_x[0]
-    x_discretize_multiplier = x_range / configs.bev_width
+    x_discretize_multiplier = x_range / configs.bev_height
     ## step 2 : create a copy of the lidar pcl and transform all metrix x-coordinates into bev-image coordinates    
     lidar_pcl_cpy = lidar_pcl.copy()
     x_coordinates = lidar_pcl_cpy[:, 0]
@@ -165,11 +181,16 @@ def bev_from_pcl(lidar_pcl, configs):
     # step 3 : perform the same operation as in step 2 for the y-coordinates but make sure that no negative bev-coordinates occur
     y_range = configs.lim_y[1] - configs.lim_y[0]
     y_discretize_multiplier = y_range / configs.bev_width
-    y_coordinates = lidar_pcl_cpy[:, 1] - lidar_pcl_cpy[:, 1].min()
+    y_coordinates = lidar_pcl_cpy[:, 1] - configs.lim_y[0]#lidar_pcl_cpy[:, 1].min()
+    #y_coordinates[y_coordinates<0]=0
     transformed_y_coordinates = y_coordinates / y_discretize_multiplier
-
+    
+    lidar_pcl_top = lidar_pcl_cpy.copy()
+    lidar_pcl_top[:, 0] = transformed_x_coordinates
+    lidar_pcl_top[:, 1] = transformed_y_coordinates
+    
     # step 4 : visualize point-cloud using the function show_pcl from a previous task
-    transformed_coordinates = np.stack([transformed_x_coordinates, transformed_y_coordinates, lidar_pcl[:, 2]], axis=1)
+    transformed_coordinates = np.stack([lidar_pcl_top[:, 0], lidar_pcl_top[:, 1], lidar_pcl[:, 2]], axis=1)
     show_pcl(transformed_coordinates)
     #######
     ####### ID_S2_EX1 END #######     
@@ -184,16 +205,33 @@ def bev_from_pcl(lidar_pcl, configs):
     intensity_map = np.zeros((configs.bev_height, configs.bev_width))
     # step 2 : re-arrange elements in lidar_pcl_cpy by sorting first by x, then y, then -z (use numpy.lexsort)
     lidar_pcl_cpy[lidar_pcl_cpy[:, 3]>1.0, 3] = 1.0
-    sorted_indices = np.lexsort((lidar_pcl_cpy[:, 0], lidar_pcl_cpy[:, 1], -lidar_pcl_cpy[:, 2]))
-    sorted_lidar = lidar_pcl_cpy[sorted_indices]
+    lidar_pcl_top[lidar_pcl_top[:, 3]>1.0, 3] = 1.0
+    sorted_indices = np.lexsort((transformed_coordinates[:, 0], transformed_coordinates[:, 1], -transformed_coordinates[:, 2]))
+    sorted_lidar = transformed_coordinates[sorted_indices]
     ## step 3 : extract all points with identical x and y such that only the top-most z-coordinate is kept (use numpy.unique)
     ##          also, store the number of points per x,y-cell in a variable named "counts" for use in the next task
-    _, unique_indices = np.unique(sorted_lidar[:, :2], axis=0, return_index=True)
-    lidar_pcl_top = lidar_pcl_cpy[unique_indices]
+    transformed_coordinates = np.stack([np.int_(transformed_coordinates[:, 0]), np.int_(transformed_coordinates[:, 1])], axis=1)
+    _, unique_indices, counts = np.unique(sorted_lidar, axis=0, return_counts=True, return_index=True)
+    #print(lidar_pcl_cpy.shape)
+    #print(indices)
+    #print(counts[counts!=1])
+    #exit()
+    print(lidar_pcl_top.shape)
+    lidar_pcl_top = lidar_pcl_top[unique_indices]
+    lidar_pcl_top[:, 0] = transformed_coordinates[unique_indices, 0]
+    lidar_pcl_top[:, 1] = transformed_coordinates[unique_indices, 1]
+    lidar_pcl_cpy = lidar_pcl_cpy[unique_indices]
     ## step 4 : assign the intensity value of each unique entry in lidar_top_pcl to the intensity map 
     ##          make sure that the intensity is scaled in such a way that objects of interest (e.g. vehicles) are clearly visible    
     ##          also, make sure that the influence of outliers is mitigated by normalizing intensity on the difference between the max. and min. value within the point cloud
-    intensity_map[np.int_(transformed_x_coordinates), np.int_(transformed_y_coordinates)] = (lidar_pcl_top[:, 3] - np.min(lidar_pcl_top[:, 3])) / (np.max(lidar_pcl_top[:, 3])-np.min(lidar_pcl_top[:, 3]))
+    intensity_map[np.int_(lidar_pcl_top[:, 0]), np.int_(lidar_pcl_top[:, 1])] = lidar_pcl_top[:, 3]
+    if False:
+        intensity_first_percentile = np.percentile(intensity_map, 1)
+        intensity_last_percentile = np.percentile(intensity_map, 99)
+        intensity_map = ((intensity_map-intensity_first_percentile)/(intensity_last_percentile-intensity_first_percentile))*intensity_last_percentile
+    else:
+        intensity_map = intensity_map / (np.max(lidar_pcl_top[:, 3]) - np.min(lidar_pcl_top[:, 3]))
+    #intensity_map = (intensity_map-intensity_map.min())/(intensity_map.max()-intensity_map.min())*50
     ## step 5 : temporarily visualize the intensity map using OpenCV to make sure that vehicles separate well from the background
     cv2.imwrite("intensity_map.png", intensity_map*255)
     #######
@@ -206,13 +244,17 @@ def bev_from_pcl(lidar_pcl, configs):
     print("student task ID_S2_EX3")
 
     ## step 1 : create a numpy array filled with zeros which has the same dimensions as the BEV map
-    height_map = np.zeros_like(lidar_pcl_cpy)
+    height_map = np.zeros((configs.bev_height, configs.bev_width))
 
     ## step 2 : assign the height value of each unique entry in lidar_top_pcl to the height map 
     ##          make sure that each entry is normalized on the difference between the upper and lower height defined in the config file
     ##          use the lidar_pcl_top data structure from the previous task to access the pixels of the height_map
-    height_map = np.zeros((configs.bev_height, configs.bev_width))
-    height_map[np.int_(transformed_x_coordinates), np.int_(transformed_y_coordinates)] = lidar_pcl_top[:, 2] / float(np.abs(configs.lim_z[1] - configs.lim_z[0]))
+    height_map[np.int_(lidar_pcl_top[:, 0]), np.int_(lidar_pcl_top[:, 1])] = lidar_pcl_top[:, 2]
+    height_map = height_map / float(np.abs(configs.lim_z[1] - configs.lim_z[0]))
+    #first_percentile = np.percentile(height_map, 1)
+    #last_percentile = np.percentile(height_map, 99)
+    #height_map[height_map<=first_percentile]=first_percentile
+    #height_map[height_map>=last_percentile]=last_percentile
     ## step 3 : temporarily visualize the intensity map using OpenCV to make sure that vehicles separate well from the background
     cv2.imwrite("height_map.png", height_map*255)
     
@@ -241,7 +283,12 @@ def bev_from_pcl(lidar_pcl, configs):
     s1, s2, s3 = bev_map.shape
     bev_maps = np.zeros((1, s1, s2, s3))
     bev_maps[0] = bev_map
-
+    if True:
+        cv2.imwrite("0.png", bev_map[0].T*255)
+        cv2.imwrite("1.png", bev_map[1].T*255)
+        cv2.imwrite("2.png", bev_map[2].T*255)
+        cv2.imwrite("bev_map.png", bev_map.T*255)
+        exit()
     bev_maps = torch.from_numpy(bev_maps)  # create tensor from birds-eye view
     input_bev_maps = bev_maps.to(configs.device, non_blocking=True).float()
     return input_bev_maps

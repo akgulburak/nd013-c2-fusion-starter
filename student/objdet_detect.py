@@ -61,7 +61,39 @@ def load_configs_model(model_name='darknet', configs=None):
         ####### ID_S3_EX1-3 START #######     
         #######
         print("student task ID_S3_EX1-3")
+        configs.model_path = os.path.join(parent_path, 'tools', 'objdet_models', 'resnet')
+        configs.pretrained_filename = os.path.join(configs.model_path, 'pretrained', 'fpn_resnet_18_epoch_300.pth')
+        configs.arch = 'fpn_resnet'
+        configs.batch_size = 4
+        configs.distributed = False
+        configs.img_size = 608
+        configs.peak_thresh = 0.2
+        configs.num_samples = None
+        configs.num_workers = 4
+        configs.pin_memory = True
+        configs.use_giou_loss = False
 
+        configs.K = 50
+        configs.nms_thresh = 0.4
+        configs.conf_thresh = 0.5
+        configs.num_classes=3
+        configs.num_center_offset = 2
+        configs.num_z = 1
+        configs.num_dim = 3
+        configs.num_direction = 2
+        configs.heads = {
+                'hm_cen': configs.num_classes,
+                'cen_offset': configs.num_center_offset,
+                'direction': configs.num_direction,
+                'z_coor': configs.num_z,
+                'dim': configs.num_dim
+            }
+        configs.hm_size = (152, 152)
+        configs.imagenet_pretrained = False
+        configs.head_conv = 64
+        configs.num_layers = 18
+
+        configs.down_ratio = 4        
         #######
         ####### ID_S3_EX1-3 END #######     
 
@@ -69,7 +101,7 @@ def load_configs_model(model_name='darknet', configs=None):
         raise ValueError("Error: Invalid model name")
 
     # GPU vs. CPU
-    configs.no_cuda = True # if true, cuda is not used
+    configs.no_cuda = True
     configs.gpu_idx = 0  # GPU index to use.
     configs.device = torch.device('cpu' if configs.no_cuda else 'cuda:{}'.format(configs.gpu_idx))
 
@@ -118,9 +150,12 @@ def create_model(configs):
         ####### ID_S3_EX1-4 START #######     
         #######
         print("student task ID_S3_EX1-4")
-
+        model = fpn_resnet.get_pose_net(num_layers=configs.num_layers, heads=configs.heads, head_conv=configs.head_conv,
+                                    imagenet_pretrained=configs.imagenet_pretrained)
+        model.load_state_dict(torch.load(configs.pretrained_filename, map_location='cpu'))
+    
         #######
-        ####### ID_S3_EX1-4 END #######     
+        ####### ID_S3_EX1-4 END #######
     
     else:
         assert False, 'Undefined model backbone'
@@ -164,27 +199,50 @@ def detect_objects(input_bev_maps, model, configs):
         elif 'fpn_resnet' in configs.arch:
             # decode output and perform post-processing
             
-            ####### ID_S3_EX1-5 START #######     
+            ####### ID_S3_EX1-5 START #######
             #######
-            print("student task ID_S3_EX1-5")
-
+            outputs_decoded = decode(outputs['hm_cen'], outputs['cen_offset'], outputs['direction'],
+                                     outputs['z_coor'], outputs['dim'], configs.K)
+            detections = outputs_decoded.cpu().numpy().astype(np.float32)
+            detections = post_processing(detections, configs)                      
             #######
             ####### ID_S3_EX1-5 END #######     
 
             
-
     ####### ID_S3_EX2 START #######     
     #######
     # Extract 3d bounding boxes from model response
     print("student task ID_S3_EX2")
-    objects = [] 
-
+    objects = []
     ## step 1 : check whether there are any detections
-
+    if configs.arch=="fpn_resnet":
+        fpn_resnet_detections = []
+        for detection in detections:
+            detection = detection[1]
+            for ith_object in detection:
+                fpn_resnet_detections.append(ith_object)
+        detections = fpn_resnet_detections
+    if len(detections)>0:
         ## step 2 : loop over all detections
-        
+        for detection in detections:
+            print(detection)
             ## step 3 : perform the conversion using the limits for x, y and z set in the configs structure
-        
+            x_range_lidar = (configs.lim_x[1] - configs.lim_x[0])
+            y_range_lidar = (configs.lim_y[1] - configs.lim_y[0])
+            bev_x_start_to_lidar = (detection[2] / configs.bev_height)*x_range_lidar
+            bev_y_start_to_lidar = (detection[1] / configs.bev_width)*y_range_lidar
+            bev_y_start_to_lidar = bev_y_start_to_lidar - (configs.lim_y[1]-configs.lim_y[0])/2.0
+            
+            raw_x_end_to_lidar = (detection[5] / configs.bev_width)*y_range_lidar
+            raw_y_end_to_lidar = (detection[6] / configs.bev_height)*x_range_lidar
+            
+            #raw_x_end_to_lidar = bev_x_start_to_lidar + detection[4] * np.sin(-detection[-1])
+            #raw_y_end_to_lidar = bev_y_start_to_lidar + detection[5] * np.cos(-detection[-1])
+            
+            object_info = [1, bev_x_start_to_lidar, bev_y_start_to_lidar, detection[3], 
+                           detection[4], raw_x_end_to_lidar, raw_y_end_to_lidar, detection[-1]]
+            print(object_info)
+            objects.append(object_info)
             ## step 4 : append the current object to the 'objects' array
         
     #######
