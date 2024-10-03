@@ -30,6 +30,7 @@ sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT)))
 # object detection tools and helper functions
 import misc.objdet_tools as tools
 
+from misc.objdet_tools import compute_box_corners
 
 # compute various performance measures to assess object detection
 def measure_detection_performance(detections, labels, labels_valid, min_iou=0.5):
@@ -47,19 +48,30 @@ def measure_detection_performance(detections, labels, labels_valid, min_iou=0.5)
             ####### ID_S4_EX1 START #######     
             #######
             print("student task ID_S4_EX1 ")
-
+            label_bounding_box = [label.box.center_x, label.box.center_y, label.box.width, label.box.length, label.box.heading]
             ## step 1 : extract the four corners of the current label bounding-box
+            label_coordinates = compute_box_corners(*label_bounding_box)
             
             ## step 2 : loop over all detected objects
-
+            for detection in detections:
+                detection = np.array(detection)
                 ## step 3 : extract the four corners of the current detection
-                
+                detection_bounding_box = detection[[1, 2, 5, 6, 7]]
+                detection_coordinates = compute_box_corners(*detection_bounding_box)
                 ## step 4 : computer the center distance between label and detection bounding-box in x, y, and z
-                
+                center_label = np.mean(label_coordinates, axis=-1)
+                center_detection = np.mean(detection_coordinates, axis=-1)
+                center_distance = abs(center_detection - center_label)
                 ## step 5 : compute the intersection over union (IOU) between label and detection bounding-box
-                
+                polygon_det = Polygon(detection_coordinates)
+                polygon_label = Polygon(label_coordinates)
+                inter_area = polygon_det.intersection(polygon_label).area
+                union_area = polygon_det.union(polygon_label).area
+                iou = float(inter_area) / union_area
                 ## step 6 : if IOU exceeds min_iou threshold, store [iou,dist_x, dist_y, dist_z] in matches_lab_det and increase the TP count
-                
+                if iou > min_iou:
+                    matches_lab_det.append([iou, center_distance[0], center_distance[1], center_distance[2]])
+                    true_positives += 1
             #######
             ####### ID_S4_EX1 END #######     
             
@@ -77,25 +89,24 @@ def measure_detection_performance(detections, labels, labels_valid, min_iou=0.5)
     # compute positives and negatives for precision/recall
     
     ## step 1 : compute the total number of positives present in the scene
-    all_positives = 0
+    all_positives = sum(labels_valid)
 
     ## step 2 : compute the number of false negatives
-    false_negatives = 0
+    false_negatives = all_positives - true_positives
 
     ## step 3 : compute the number of false positives
-    false_positives = 0
+    false_positives = len(detections) - true_positives
     
     #######
     ####### ID_S4_EX2 END #######     
     
     pos_negs = [all_positives, true_positives, false_negatives, false_positives]
     det_performance = [ious, center_devs, pos_negs]
-    
     return det_performance
 
 
 # evaluate object detection performance based on all frames
-def compute_performance_stats(det_performance_all):
+def compute_performance_stats(det_performance_all, configs_det):
 
     # extract elements
     ious = []
@@ -109,14 +120,16 @@ def compute_performance_stats(det_performance_all):
     ####### ID_S4_EX3 START #######     
     #######    
     print('student task ID_S4_EX3')
-
     ## step 1 : extract the total number of positives, true positives, false negatives and false positives
-    
+    all_positives = sum(np.array(pos_negs)[:, 0])
+    true_positives = sum(np.array(pos_negs)[:, 1])
+    false_negatives = sum(np.array(pos_negs)[:, 2])
+    false_positives = sum(np.array(pos_negs)[:, 3])
     ## step 2 : compute precision
-    precision = 0.0
+    precision = true_positives / (true_positives + false_positives)
 
     ## step 3 : compute recall 
-    recall = 0.0
+    recall = true_positives / (true_positives + false_negatives)
 
     #######    
     ####### ID_S4_EX3 END #######     

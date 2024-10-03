@@ -62,15 +62,13 @@ def show_pcl(pcl):
     # step 3 : set points in pcd instance by converting the point-cloud into 3d vectors (using open3d function Vector3dVector)
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(pcl[:, :3])
-    #if not FRAME_SKIPPED:
+
     FRAME_SKIPPED = False
     VISUALIZER = o3d.visualization.VisualizerWithKeyCallback()
     VISUALIZER.register_key_callback(113, key_callback_destroy)
     VISUALIZER.register_key_callback(262, key_callback_skip)
     VISUALIZER.create_window()
     VISUALIZER.add_geometry(point_cloud)
-    #FRAME_SKIPPED = True
-    #else:
     while not FRAME_SKIPPED:
         VISUALIZER.poll_events()
         VISUALIZER.update_renderer()
@@ -170,7 +168,6 @@ def bev_from_pcl(lidar_pcl, configs):
     ####### ID_S2_EX1 START #######
     #######
     print("student task ID_S2_EX1")
-    print(configs)
     ## step 1 :  compute bev-map discretization by dividing x-range by the bev-image height (see configs)
     x_range = configs.lim_x[1] - configs.lim_x[0]
     x_discretize_multiplier = x_range / configs.bev_height
@@ -212,11 +209,7 @@ def bev_from_pcl(lidar_pcl, configs):
     ##          also, store the number of points per x,y-cell in a variable named "counts" for use in the next task
     transformed_coordinates = np.stack([np.int_(transformed_coordinates[:, 0]), np.int_(transformed_coordinates[:, 1])], axis=1)
     _, unique_indices, counts = np.unique(sorted_lidar, axis=0, return_counts=True, return_index=True)
-    #print(lidar_pcl_cpy.shape)
-    #print(indices)
-    #print(counts[counts!=1])
-    #exit()
-    print(lidar_pcl_top.shape)
+
     lidar_pcl_top = lidar_pcl_top[unique_indices]
     lidar_pcl_top[:, 0] = transformed_coordinates[unique_indices, 0]
     lidar_pcl_top[:, 1] = transformed_coordinates[unique_indices, 1]
@@ -225,12 +218,8 @@ def bev_from_pcl(lidar_pcl, configs):
     ##          make sure that the intensity is scaled in such a way that objects of interest (e.g. vehicles) are clearly visible    
     ##          also, make sure that the influence of outliers is mitigated by normalizing intensity on the difference between the max. and min. value within the point cloud
     intensity_map[np.int_(lidar_pcl_top[:, 0]), np.int_(lidar_pcl_top[:, 1])] = lidar_pcl_top[:, 3]
-    if False:
-        intensity_first_percentile = np.percentile(intensity_map, 1)
-        intensity_last_percentile = np.percentile(intensity_map, 99)
-        intensity_map = ((intensity_map-intensity_first_percentile)/(intensity_last_percentile-intensity_first_percentile))*intensity_last_percentile
-    else:
-        intensity_map = intensity_map / (np.max(lidar_pcl_top[:, 3]) - np.min(lidar_pcl_top[:, 3]))
+
+    intensity_map = intensity_map / (np.max(lidar_pcl_top[:, 3]) - np.min(lidar_pcl_top[:, 3]))
     #intensity_map = (intensity_map-intensity_map.min())/(intensity_map.max()-intensity_map.min())*50
     ## step 5 : temporarily visualize the intensity map using OpenCV to make sure that vehicles separate well from the background
     cv2.imwrite("intensity_map.png", intensity_map*255)
@@ -251,10 +240,6 @@ def bev_from_pcl(lidar_pcl, configs):
     ##          use the lidar_pcl_top data structure from the previous task to access the pixels of the height_map
     height_map[np.int_(lidar_pcl_top[:, 0]), np.int_(lidar_pcl_top[:, 1])] = lidar_pcl_top[:, 2]
     height_map = height_map / float(np.abs(configs.lim_z[1] - configs.lim_z[0]))
-    #first_percentile = np.percentile(height_map, 1)
-    #last_percentile = np.percentile(height_map, 99)
-    #height_map[height_map<=first_percentile]=first_percentile
-    #height_map[height_map>=last_percentile]=last_percentile
     ## step 3 : temporarily visualize the intensity map using OpenCV to make sure that vehicles separate well from the background
     cv2.imwrite("height_map.png", height_map*255)
     
@@ -283,12 +268,6 @@ def bev_from_pcl(lidar_pcl, configs):
     s1, s2, s3 = bev_map.shape
     bev_maps = np.zeros((1, s1, s2, s3))
     bev_maps[0] = bev_map
-    if True:
-        cv2.imwrite("0.png", bev_map[0].T*255)
-        cv2.imwrite("1.png", bev_map[1].T*255)
-        cv2.imwrite("2.png", bev_map[2].T*255)
-        cv2.imwrite("bev_map.png", bev_map.T*255)
-        exit()
     bev_maps = torch.from_numpy(bev_maps)  # create tensor from birds-eye view
     input_bev_maps = bev_maps.to(configs.device, non_blocking=True).float()
     return input_bev_maps

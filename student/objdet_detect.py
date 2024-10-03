@@ -56,6 +56,7 @@ def load_configs_model(model_name='darknet', configs=None):
         configs.num_workers = 4
         configs.pin_memory = True
         configs.use_giou_loss = False
+        configs.min_iou = 0.5
 
     elif model_name == 'fpn_resnet':
         ####### ID_S3_EX1-3 START #######     
@@ -92,6 +93,7 @@ def load_configs_model(model_name='darknet', configs=None):
         configs.imagenet_pretrained = False
         configs.head_conv = 64
         configs.num_layers = 18
+        configs.min_iou = 0.5
 
         configs.down_ratio = 4        
         #######
@@ -225,7 +227,6 @@ def detect_objects(input_bev_maps, model, configs):
     if len(detections)>0:
         ## step 2 : loop over all detections
         for detection in detections:
-            print(detection)
             ## step 3 : perform the conversion using the limits for x, y and z set in the configs structure
             x_range_lidar = (configs.lim_x[1] - configs.lim_x[0])
             y_range_lidar = (configs.lim_y[1] - configs.lim_y[0])
@@ -236,14 +237,10 @@ def detect_objects(input_bev_maps, model, configs):
             raw_x_end_to_lidar = (detection[5] / configs.bev_width)*y_range_lidar
             raw_y_end_to_lidar = (detection[6] / configs.bev_height)*x_range_lidar
             
-            #raw_x_end_to_lidar = bev_x_start_to_lidar + detection[4] * np.sin(-detection[-1])
-            #raw_y_end_to_lidar = bev_y_start_to_lidar + detection[5] * np.cos(-detection[-1])
-            
             object_info = [1, bev_x_start_to_lidar, bev_y_start_to_lidar, detection[3], 
                            detection[4], raw_x_end_to_lidar, raw_y_end_to_lidar, detection[-1]]
-            print(object_info)
-            objects.append(object_info)
             ## step 4 : append the current object to the 'objects' array
+            objects.append(object_info)
         
     #######
     ####### ID_S3_EX2 START #######   
